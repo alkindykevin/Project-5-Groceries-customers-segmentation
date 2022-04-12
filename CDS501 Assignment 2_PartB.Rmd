@@ -1,0 +1,522 @@
+---
+title: "CDS501 Assignment 2"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Grocery Customer Segmentation
+
+Group Member:  
+- **Kevin Alkindy Faisal  P-COM0145/21**  
+- **Md Ashiqur Rahman     P-COM0152/21**  
+- **Pratidtha Suvanamporn P-COM0217/21**  
+
+***About this dataset*** :  
+Customer Personality Analysis is a detailed analysis of a company’s ideal customers. It helps a business to better understand its customers and makes it easier for them to modify products according to the specific needs, behaviors and concerns of different types of customers.
+
+Customer personality analysis helps a business to modify its product based on its target customers from different types of customer segments. For example, instead of spending money to market a new product to every customer in the company’s database, a company can analyze which customer segment is most likely to buy the product and then market the product only on that particular segment.
+
+***Attributes***
+
+**Customer Information**
+
+ID            : Customer's unique identifier  
+Year_Birth    : Customer's birth year  
+Education     : Customer's education level  
+Marital_Status: Customer's marital status  
+Income        : Customer's yearly household income  
+Kidhome       : Number of children in customer's household  
+Teenhome      : Number of teenagers in customer's household  
+Dt_Customer   : Date of customer's enrollment with the company  
+Recency       : Number of days since customer's last purchase  
+Complain      : 1 if the customer complained in the last 2 years, 0 otherwise  
+
+**Products**
+
+MntWines        : Amount spent on wine in last 2 years  
+MntFruits       : Amount spent on fruits in last 2 years  
+MntMeatProducts : Amount spent on meat in last 2 years  
+MntFishProducts : Amount spent on fish in last 2 years  
+MntSweetProducts: Amount spent on sweets in last 2 years  
+MntGoldProds    : Amount spent on gold in last 2 years  
+
+**Promotion**
+
+NumDealsPurchases: Number of purchases made with a discount  
+AcceptedCmp1     : 1 if customer accepted the offer in the 1st campaign, 0 otherwise  
+AcceptedCmp2     : 1 if customer accepted the offer in the 2nd campaign, 0 otherwise  
+AcceptedCmp3     : 1 if customer accepted the offer in the 3rd campaign, 0 otherwise  
+AcceptedCmp4     : 1 if customer accepted the offer in the 4th campaign, 0 otherwise  
+AcceptedCmp5     : 1 if customer accepted the offer in the 5th campaign, 0 otherwise  
+Response         : 1 if customer accepted the offer in the last campaign, 0 otherwise  
+
+**Place**
+
+NumWebPurchases    : Number of purchases made through the company’s website  
+NumCatalogPurchases: Number of purchases made using a catalogue  
+NumStorePurchases  : Number of purchases made directly in stores  
+NumWebVisitsMonth  : Number of visits to company’s website in the last month 
+
+Dataset Source:
+Kaggle : https://www.kaggle.com/imakash3011/customer-personality-analysis
+
+# 1. Data Understanding
+
+```{r}
+# Load libraries
+library(tidyverse)
+library(corrplot)
+library(gridExtra)
+library(GGally)
+library(knitr)
+library(ggplot2)
+```
+
+
+## 1.1. Load Data
+
+```{r}
+# create a dataframe and store as variable df 
+options(repr.matrix.max.cols=30, repr.matrix.max.rows=30) # to show all column
+cust <- read.csv('marketing_campaign.csv')
+
+# display top 6 first rows
+head(cust)
+
+# display bottom 6 last rows
+tail(cust)
+```
+
+## 1.2. Dataset General Information
+
+```{r}
+str(cust)
+```
+**Summary :**
+1. The dataset contains 27 variables.  
+2. Variable *Dt_Customer* was supposed to in DateTime type.  
+3. There are 16 numerical variable, 11 categorical variables.   
+4. We can extract the age of the customer using variable **Year_Birth**.  
+5. We can create variable children from addition of **Kidhome** and **Teenhome**.  
+6. We can also create the total spend of the products that customers bought, through sum of product that they bought.  
+7. We can extract the total of the days since customer start shopping in the grocery
+
+## 1.3. Descriptive Statistics
+
+```{r}
+summary(cust)
+```
+
+**Summary :**
+1. Based on the summary above, there is  a varible that contains 24 missing value in variable **Income**
+2. And also the values from all varibles are not in the same scale, so they should be transformed into the same scale before performing the clustering.
+
+```{r}
+# Check the unique element in variable Education
+table(cust$Education)
+```
+```{r}
+# Check the unique element in variable Marital Status
+table(cust$Marital_Status)
+```
+
+**Summary :**
+We can derive the new varible from variable Eduation and Marital Status
+
+# 2. Data Cleaning
+
+## 2.1. Check and Treat Missing Values  
+Since the total of missing values are only around 1% of the data, we just drop it.
+
+```{r}
+# check the total of missing values
+sum(is.na(cust))
+```
+```{r}
+# create a copy of original data 
+cln <- data.frame(cust)
+```
+```{r}
+
+# remove missing values
+cln <- na.omit(cln)
+```
+```{r}
+# Check after remove the missing value
+sum(is.na(cln))
+```
+
+## 2.2. Check and The outliers 
+
+```{r}
+# Boxplot for each Attribute  
+
+# Subset the dataframe without categorical feature, feature ID and Dt_Customer
+col_names <- colnames(cln[c(2,5:7,9:20)])
+
+# create loop to plot boxplot
+for (i in col_names){
+    boxplot <- ggplot(cln, aes_string(y=i)) +
+    geom_boxplot(fill="#69b3a2")
+    print(boxplot)
+}
+```
+
+```{r}
+# define function to check the outliers using IQR
+FindOutliers <- function(data) {
+  lowerq = quantile(data)[2]
+  upperq = quantile(data)[4]
+  iqr = upperq - lowerq #Or use IQR(data)
+  # we identify extreme outliers
+  extreme.threshold.upper = (iqr * 1.5) + upperq
+  extreme.threshold.lower = lowerq - (iqr * 1.5)
+  result <- which(data > extreme.threshold.upper | data < extreme.threshold.lower)
+  length(result)}
+apply(cln[c(2,5:7,9:20)], 2, FindOutliers)
+```
+
+```{r}
+# check summary after treat missing values
+summary(cln)
+```
+From the box plot, outliers calculation using IQR method, and the summary of data, we can identify that there are around 50% outliers in this data. But the outliers here are basically the natural value. It is possible if the customer buy many wines, fishe, and etc. However for the income of 666666 might be the error data. Furthermore, there are also some outliers in feature Year_birth, It might be possible to have age of above 100, but according to average of human life, it's not make sense. So we are gonna treat the outliers in feature income and Year_birth through removing the outliers, since the outliers are only 11.
+
+```{r}
+# Removing the outliers in feature income
+
+# create a variale which contains Q1 & Q3
+Q.inc <- quantile(cln$Income, probs=c(.25, .75), na.rm = FALSE)
+# calculate IQR
+IQR.inc <- IQR(cln$Income)
+
+# find the cut-off ranges beyond which all data points are outliers.
+ub.inc <- (IQR.inc * 1.5) + Q.inc[2]
+lb.inc <- Q.inc[1] - (IQR.inc * 1.5)
+
+# extract the part of dataframe which isn't included the outlier values
+cln <- subset(cln, cln$Income > lb.inc & cln$Income < ub.inc)
+
+# Removing the outliers in feature Year_Birth
+
+# create a variale which contains Q1 & Q3
+Q.yb <- quantile(cln$Year_Birth, probs=c(.25, .75), na.rm = FALSE)
+# calculate IQR
+IQR.yb <- IQR(cln$Year_Birth)
+
+# find the cut-off ranges beyond which all data points are outliers.
+ub.yb <- (IQR.yb * 1.5) + Q.yb[2]
+lb.yb <- Q.yb[1] - (IQR.yb * 1.5)
+
+# extract the part of dataframe which isn't included the outlier values
+cln <- subset(cln, cln$Year_Birth > lb.yb & cln$Year_Birth < ub.yb)
+```
+
+```{r}
+# Check the outlier in feature Income and Year_Birth after remove it
+apply(cln[c(2,5)], 2, FindOutliers)
+```
+
+We can see that no outliers exist. It works !
+
+# 3. Feature Engineering
+
+After we finish clean the data, now there are some possibility to derive the new features from the existing features.
+
+1. Extract the "Age" of a customer by the "Year_Birth" indicating the birth year of the respective person.  
+2. Create another feature "Total_Spent" indicating the total amount spent by the customer in various categories over the span of two years.  
+3. Grouping similar value of "Marital_Status" to reduce the cardinality.  
+4. Grouping similar value of "Education" to reduce the cardinality. 
+5. Create a feature "Children" with combining the feature Kidhome and Teenhome 
+6. Dropping some of the redundant features  
+
+```{r}
+# Extract the age of the customer
+cln$Age <- 2022 - cln$Year_Birth
+
+# Derive spent variable
+cln$Total_Spent <- cln$MntFishProducts + cln$MntFruits + cln$MntGoldProds + cln$MntMeatProducts + cln$MntSweetProducts + cln$MntWines
+
+# Derive variable total children in the family
+cln$children <- cln$Kidhome + cln$Teenhome
+
+# replace the value of some columns
+
+# Education
+cln$Education[cln$Education == "2n Cycle"] <- "undergraduate"
+cln$Education[cln$Education == "Basic"] <- "undergraduate"
+cln$Education[cln$Education == "Graduation"] <- "postgraduate"
+cln$Education[cln$Education == "Master"] <- "postgraduate"
+cln$Education[cln$Education == "PhD"] <- "postgraduate"
+
+# Marital Status
+cln$Marital_Status[cln$Marital_Status == "single"] <- "Single"
+cln$Marital_Status[cln$Marital_Status == "Absurd"] <- "Single"
+cln$Marital_Status[cln$Marital_Status == "Alone"] <- "Single"
+cln$Marital_Status[cln$Marital_Status == "Together"] <- "Married"
+cln$Marital_Status[cln$Marital_Status == "Widow"] <- "Divorced"
+cln$Marital_Status[cln$Marital_Status == "YOLO"] <- "Single"
+```
+
+```{r}
+# change some columns' name
+names(cln)[names(cln) == "MntWines"] <- "Wines"
+names(cln)[names(cln) == "MntFruits"] <- "Fruits"
+names(cln)[names(cln) == "MntSweetProducts"] <- "Sweet"
+names(cln)[names(cln) == "MntMeatProducts"] <- "Meat"
+names(cln)[names(cln) == "MntGoldProds"] <- "Gold"
+names(cln)[names(cln) == "MntFishProducts"] <- "Fish"
+```
+
+```{r}
+names(cln)
+```
+
+
+```{r}
+# FIX DATASET 
+clean_fe <- cln[, c("Age","Education","Marital_Status","children","Income","Recency","Wines","Fruits","Meat","Fish","Sweet","Gold",
+                  "Total_Spent","NumDealsPurchases","NumWebPurchases","NumCatalogPurchases","NumStorePurchases","NumWebVisitsMonth",
+                  "AcceptedCmp3","AcceptedCmp4","AcceptedCmp5","AcceptedCmp1","AcceptedCmp2","Complain","Response")]
+
+# change all columns' name to lower case letter
+names(clean_fe)<- tolower(names(clean_fe))
+```
+
+```{r}
+summary(clean_fe)
+```
+
+# 4. Visualization The Data
+
+```{r}
+# Group the feature based on data type to ease the visualization
+
+# numerical data
+nums <- clean_fe[, c("age","children","income","recency","wines","fruits","meat","fish","sweet","gold","total_spent",
+                "numdealspurchases","numwebpurchases","numcatalogpurchases","numstorepurchases","numwebvisitsmonth",
+                "acceptedcmp3","acceptedcmp4","acceptedcmp5","acceptedcmp1","acceptedcmp2","complain","response")]
+
+#categorical data
+cats <- clean_fe[, c("education","marital_status")]
+```
+
+## 4.1. Density Plot
+
+```{r}
+# Density plot for each attribute
+col_nums <- colnames(nums)
+
+for (i in col_nums){
+    density <- ggplot(nums, aes_string(x=i)) +
+    geom_density(fill="#69b3a2")
+    print(density)
+}
+```
+
+## 4.2. Correlation Plot
+
+```{r,fig.width=10, fig.height=8}
+# load package
+library(corrplot)
+# create correlation plot
+corr <- cor(nums)
+corrplot(corr, type="upper", method="ellipse", tl.cex=0.9)
+```
+```{r}
+# Check the unique element in variable Marital Status
+table(clean_fe$marital_status)
+```
+
+```{r}
+# Check the unique element in variable Education
+table(clean_fe$education)
+```
+
+
+```{r}
+head(clean_fe)
+```
+
+
+# 5. Data Pre-Processing
+
+In this section, we will perform some data pre-processing methods to prepare the data for modeling  
+1. Label encoding for categorical faetures
+2. Scaling the features 
+```{r}
+```
+
+## 5.1. Label Encoding
+
+```{r}
+# import the library for label encoding
+library(superml)
+
+# Encoding for Feature Education
+
+# LabelEncoder$new() creates and initializes an instance of the Label Encoder class.
+label <- LabelEncoder$new()
+# LabelEncoder$fit() create memory space for the encoding values but it does not return any value as an output.
+print(label$fit(clean_fe$education))
+# LabelEncoder$fit_transform() encode the data as well as reserve memory for the encoding values ahead.
+clean_fe$education <- label$fit_transform(clean_fe$education)
+# print the result
+print(clean_fe$education)
+```
+
+```{r}
+# Encoding for Feature marital_status
+
+# LabelEncoder$fit() create memory space for the encoding values but it does not return any value as an output.
+print(label$fit(clean_fe$marital_status))
+# LabelEncoder$fit_transform() encode the data as well as reserve memory for the encoding values ahead.
+clean_fe$marital_status <- label$fit_transform(clean_fe$marital_status)
+# print the result
+print(clean_fe$marital_status)
+```
+
+```{r}
+head(clean_fe)
+```
+
+
+## 5.2. Normalize data using range
+
+Before applying the clustering, we have to normalize the features to be in the same range of values.
+```{r}
+#load package
+library(caret)
+# Normalization
+clean_fe_norm <-  data.frame(clean_fe)
+
+# calculate the pre-process parameters from the dataset
+preprocessParams <- preProcess(clean_fe_norm, method=c("range"))
+# summarize transform parameters
+print(preprocessParams)
+# transform the dataset using the parameters
+clean_fe_norm <- predict(preprocessParams, clean_fe_norm)
+# summarize the transformed dataset
+summary(clean_fe_norm)
+```
+
+## 5.3. PCA
+
+```{r}
+pca_df <- data.frame(clean_fe)
+pca <- prcomp(pca_df, scale. = TRUE)
+```
+
+```{r}
+# Plot variance ration in each PCA 
+pca_var <- pca$sdev^2
+pca_var_perc <- round(pca_var/sum(pca_var) * 100, 1)
+barplot(pca_var_perc, main = "Variation Plot", xlab = "PCs", ylab = "Percentage Variance", ylim = c(0, 100))
+```
+The barchart above shows that around 30% of the variation in the data is shown by PC1 and then very little is captured by the rest of the PCs. The most important features can be extract using rotation.  
+
+
+
+```{r}
+# Which features do contribute the most in PC1
+PC1 <- pca$rotation[,1]
+PC1_scores <- abs(PC1)
+PC1_scores_ordered <- sort(PC1_scores, decreasing = TRUE)
+names(PC1_scores_ordered)
+```
+The top 2 features are total_spent and income. So we will select these features to build the K-means model.
+
+# 6. K-Means Clustering Model
+
+## 6.1. Find the optimal K using Elbow Plot
+
+To study graphically which value of k gives us the best partition, we can plot betweenss and tot.withinss vs Choice of k.    
+
+```{r}
+bss <- numeric()
+wss <- numeric()
+
+# Run the algorithm for different values of k 
+set.seed(1234)
+
+# set range of k value from 1 to 10
+for(i in 1:10){
+
+  # For each k, calculate betweenss and tot.withinss
+  bss[i] <- kmeans(clean_fe_norm[c(5,13)], centers=i)$betweenss
+  wss[i] <- kmeans(clean_fe_norm[c(5,13)], centers=i)$tot.withinss
+
+}
+
+# Between-cluster sum of squares vs Choice of k
+p3 <- qplot(1:10, bss, geom=c("point", "line"), 
+            xlab="Number of clusters", ylab="Between-cluster sum of squares") +
+  scale_x_continuous(breaks=seq(0, 10, 1)) +
+  theme_bw()
+
+# Total within-cluster sum of squares vs Choice of k
+p4 <- qplot(1:10, wss, geom=c("point", "line"),
+            xlab="Number of clusters", ylab="Total within-cluster sum of squares") +
+  scale_x_continuous(breaks=seq(0, 10, 1)) +
+  theme_bw()
+
+# Subplot
+grid.arrange(p3, p4, ncol=2)
+```
+From the elbow plot above, it's clear that the optimal number of cluster = 3. After K = 3, the difference between BCSS and WCSS value are not significant.
+
+## 6.2. Kmeans Modeling with Selected Features
+
+```{r}
+# Execution of k-means with k=3
+set.seed(1234)
+
+cust_k3 <- kmeans(clean_fe_norm[c(5,13)], centers=3, nstart = 20)
+cust_k3
+```
+
+Additionally, the kmeans() function returns some ratios that let us know how compact is a cluster and how different are several clusters among themselves.  
+
+1. betweenss. The between-cluster sum of squares. In an optimal segmentation, one expects this ratio to be as higher as possible, since we would like to have heterogeneous clusters.  
+
+2. withinss. Vector of within-cluster sum of squares, one component per cluster. In an optimal segmentation, one expects this ratio to be as lower as possible for each cluster, since we would like to have homogeneity within the clusters.  
+
+3. tot.withinss. Total within-cluster sum of squares.  
+
+4. totss. The total sum of squares 
+
+A good clustering has a small WSS(k) and a large BSS(k).
+
+```{r}
+# Between-cluster sum of squares
+cust_k3$betweenss
+```
+```{r}
+# Within-cluster sum of squares
+cust_k3$withinss
+```
+
+```{r}
+# Total within-cluster sum of squares / inertia value
+cust_k3$tot.withinss
+```
+
+## 6.3. Cluster Interpretation
+
+
+```{r}
+#Plot the data to see the clusters:
+cust_k3$cluster <- as.factor(cust_k3$cluster)
+ggplot(clean_fe, aes(income, total_spent, color = cust_k3$cluster)) + geom_point()
+```
+The bigger income of the customers, the more the total expenses.
+
+
+
+
+
